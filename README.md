@@ -1,4 +1,4 @@
-Dimecoin 1.5.0 BETA
+Dimecoin 1.5.0 BETA (for coinpunk)
 ====================
 
 Copyright (c) 2009-2013 Bitcoin Developers
