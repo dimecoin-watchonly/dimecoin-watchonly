@@ -85,6 +85,23 @@ bool CWallet::AddCScript(const CScript& redeemScript)
     return CWalletDB(strWalletFile).WriteCScript(Hash160(redeemScript), redeemScript);
 }
 
+bool CWallet::AddWatchOnly(const CTxDestination &dest)
+{
+    if (!CCryptoKeyStore::AddWatchOnly(dest))
+        return false;
+     // Unsupported in Quark
+    //nTimeFirstKey = 1; // No birthday information for watch-only keys.
+    if (!fFileBacked)
+        return true;
+    return CWalletDB(strWalletFile).WriteWatchOnly(dest);
+}
+
+bool CWallet::LoadWatchOnly(const CTxDestination &dest)
+{
+    printf("Loaded %s!\n", CBitcoinAddress(dest).ToString().c_str());
+    return CCryptoKeyStore::AddWatchOnly(dest);
+}
+
 bool CWallet::Unlock(const SecureString& strWalletPassphrase)
 {
     if (!IsLocked())
@@ -534,7 +551,7 @@ bool CWallet::EraseFromWallet(uint256 hash)
 }
 
 
-bool CWallet::IsMine(const CTxIn &txin) const
+isminetype CWallet::IsMine(const CTxIn &txin) const
 {
     {
         LOCK(cs_wallet);
@@ -543,11 +560,10 @@ bool CWallet::IsMine(const CTxIn &txin) const
         {
             const CWalletTx& prev = (*mi).second;
             if (txin.prevout.n < prev.vout.size())
-                if (IsMine(prev.vout[txin.prevout.n]))
-                    return true;
+                return IsMine(prev.vout[txin.prevout.n]);
         }
     }
-    return false;
+    return MINE_NO;
 }
 
 int64 CWallet::GetDebit(const CTxIn &txin) const
@@ -954,7 +970,7 @@ int64 CWallet::GetImmatureBalance() const
     return nTotal;
 }
 
-// populate vCoins with vector of spendable COutputs
+// populate vCoins with vector of available COutputs.
 void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed) const
 {
     vCoins.clear();
@@ -975,9 +991,10 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed) const
                 continue;
 
             for (unsigned int i = 0; i < pcoin->vout.size(); i++) {
-                if (!(pcoin->IsSpent(i)) && IsMine(pcoin->vout[i]) &&
+                isminetype mine = IsMine(pcoin->vout[i]);
+                if (!(pcoin->IsSpent(i)) && mine &&
                     !IsLockedCoin((*it).first, i) && pcoin->vout[i].nValue > 0)
-                    vCoins.push_back(COutput(pcoin, i, pcoin->GetDepthInMainChain()));
+                    vCoins.push_back(COutput(pcoin, i, pcoin->GetDepthInMainChain(), mine == MINE_SPENDABLE));
             }
         }
     }
@@ -1044,8 +1061,11 @@ bool CWallet::SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfThe
 
     random_shuffle(vCoins.begin(), vCoins.end(), GetRandInt);
 
-    BOOST_FOREACH(COutput output, vCoins)
+    BOOST_FOREACH(const COutput &output, vCoins)
     {
+        if (!output.fSpendable)
+            continue;
+
         const CWalletTx *pcoin = output.tx;
 
         if (output.nDepth < (pcoin->IsFromMe() ? nConfMine : nConfTheirs))

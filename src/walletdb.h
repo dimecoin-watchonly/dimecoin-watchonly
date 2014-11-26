@@ -7,6 +7,7 @@
 
 #include "db.h"
 #include "base58.h"
+#include "keystore.h"
 
 class CKeyPool;
 class CAccount;
@@ -48,6 +49,12 @@ public:
     {
         nWalletDBUpdated++;
         return Erase(std::make_pair(std::string("tx"), hash));
+    }
+
+    bool WriteWatchOnly(const CTxDestination &dest)
+    {
+        nWalletDBUpdated++;
+        return Write(std::make_pair(std::string("watch"), CBitcoinAddress(dest).ToString()), '1');
     }
 
     bool WriteKey(const CPubKey& vchPubKey, const CPrivKey& vchPrivKey)
